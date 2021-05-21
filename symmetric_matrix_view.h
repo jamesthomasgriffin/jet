@@ -1,3 +1,4 @@
+#pragma once
 
 #include <iterator>     // for std::forward_iterator_tag
 #include <type_traits>  // for std::conditional_t
