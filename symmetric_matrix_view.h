@@ -6,7 +6,9 @@
 namespace jet {
 
 namespace details {
+
 static inline size_t num_pairs(size_t n) { return (n * (n + 1)) / 2; }
+
 } // namespace details
 
 // A symmetric matrix with values in V
