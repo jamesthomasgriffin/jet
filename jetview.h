@@ -86,8 +86,8 @@ inline Jet2View<V, P>::operator owning_jet_type() const {
                                          m_parameters_p + m_num_parameters};
   Jet2<value_type, parameter_type> output{std::move(parameters), value()};
 
-  std::copy(begin_derivatives(), end_second_derivatives(),
-            output.begin_derivatives());
+  std::copy(m_data_p, m_data_p + data_length(num_parameters()),
+            output.data());
 
   return output;
 }

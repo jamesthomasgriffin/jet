@@ -1,12 +1,83 @@
 #pragma once
 
-#include <vector>       // for std::vector
-#include <type_traits>  // for std::enable_if_t
-#include <assert.h>     // for assert
+#include <concepts>
+#include <map>
+//#include <vector>       // for std::vector
+//#include <type_traits>  // for std::enable_if_t
+//#include <assert.h>     // for assert
 
 #include "symmetric_matrix_view.h"  // for SymmetricMatrixView
 
 namespace jet {
+
+template <typename V>
+concept summable = std::default_initializable<V> &&
+    requires (V v) { {v + v} -> std::convertible_to<V>; };
+
+template <typename M>
+concept map_like = requires (M map) {
+    { map.begin() } -> std::input_iterator;
+    { map.begin()->second } -> std::assignable_from<typename M::mapped_type>;
+};
+
+static_assert(map_like<std::map<int, float>>);
+
+template<typename J>
+concept HasDerivatives = requires (J jet) {
+    summable<typename J::value_type>;
+    std::totally_ordered<typename J::value_type>;
+    { jet.value() } -> std::convertible_to<typename J::value_type>;
+    { jet.derivatives() };
+    { jet.derivatives().begin() };
+    { jet.derivative(std::declval<typename J::label_type>()) } -> std::convertible_to<typename J::value_type>;
+};
+
+template<typename J>
+concept HasSecondDerivatives = HasDerivatives<J> && requires (J jet) {
+    { jet.second_derivatives() };
+    { jet.second_derivative(std::declval<typename J::label_type>(), std::declval<typename J::label_type>()) } -> std::convertible_to<typename J::value_type>;
+};
+
+
+template<summable V, std::totally_ordered L>
+class OneJet {
+public:
+    using value_type = V;
+    using label_type = L;
+private:
+    V m_value;
+    std::map<L, V> m_derivatives{};
+
+public:
+    OneJet(V const& val) : m_value{ val } {}
+    V& value() { return m_value; }
+    V const& value() const { return m_value; }
+
+    std::map<L, V>& derivatives() { return m_derivatives; }
+    std::map<L, V> const& derivatives() const { return m_derivatives; }
+    bool is_derivative(L const& label) const { return m_derivatives.find(label) != m_derivatives.end(); }
+    V& derivative(L const& label) { return m_derivatives[label]; }
+    V const& derivative(L const& label) const { return m_derivatives[label]; }
+
+    OneJet& add_derivative(L const& label) { return add_derivative(label, V{}); }
+    OneJet& add_derivative(L const& label, V const& value) {
+        m_derivatives.try_emplace(label, value);
+        return *this;
+    }
+
+    template<typename C>
+    using result_t = OneJet<C, L>;
+
+    template<typename C, HasDerivatives D>
+    OneJet<C, L> merged_derivatives(C const& value, D const& other) const {
+        OneJet<C, L> result{value};
+        for(auto const& pr : m_derivatives)
+            result.add_derivative(pr.first);
+        for(auto const& pr : other.derivatives())
+            result.add_derivative(pr.first);
+        return result;
+    }
+};
 
 /*
 A class that holds a value of type V, along with derivative and second
@@ -253,7 +324,7 @@ Jet &operator*=(Jet &out, Jrhs const &a) {
     out.derivative(indices[i]) = out.derivative(indices[i]) * a.value();
 
   for (int j = 0; j < n_a; ++j)
-    out.derivative(indices[j]) += out.value() * a.derivative(i);
+    out.derivative(indices[j]) += out.value() * a.derivative(j);
 
   out.value() *= a.value();
 
@@ -534,11 +605,12 @@ Jet2<V, P>::add_parameters(std::vector<parameter_type> const &params) {
 }
 
 template <typename V, typename P> inline void Jet2<V, P>::pop_back() {
+  m_data.erase(m_data.data() + num_parameters()); // Remove the extra derivative
+
   m_parameters.pop_back();
-  m_data.resize(data_length(num_parameters()) +
-                1); // Will remove the second derivatives corresponding to the
+  m_data.resize(data_length(num_parameters())); 
+                    // Will remove the second derivatives corresponding to the
                     // final parameter
-  m_data.erase(cend_derivatives()); // Remove the extra derivative
   m_second_derivatives =
       SymmetricMatrixView(m_data + num_parameters(), num_parameters());
 }
@@ -623,14 +695,14 @@ inline void Jet2<V, P>::push_back_parameter(parameter_type const &p) {
   m_parameters.push_back(p); // after this push_back the begin/end iterators
                              // will be placed for the new size
   m_data.reserve(data_length(num_parameters()));
-  m_data.insert(cend_derivatives() - 1,
+  m_data.insert(m_data.data() + num_parameters(),
                 V{}); // Add first derivative (zero valued), moving old second
                       // derivatives back
   m_data.resize(
       data_length(num_parameters())); // Add slots for second derivatives
                                       // which should be at end of data
   m_second_derivatives =
-      SymmetricMatrixView(m_data + num_parameters(), num_parameters());
+      SymmetricMatrixView(m_data.data() + num_parameters(), num_parameters());
 }
 
 } // namespace jet
